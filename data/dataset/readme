@@ -1,0 +1,1 @@
+Download the HPID dataset (http://www-prima.inrialpes.fr/perso/Gourier/Faces/HPDatabase.html) here and then run the preprocess_dataset.py to create the dataset.pickle
