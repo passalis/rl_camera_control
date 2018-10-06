@@ -7,7 +7,8 @@ import pickle
 
 class DroneControlEnv(gym.Env):
 
-    def __init__(self, dataset_pickle_path='data/dataset.pickle', testing=False, interactive=False):
+    def __init__(self, dataset_pickle_path='data/dataset.pickle', testing=False, interactive=False, a_p=0.15, a_r=0.1,
+                 e_thres=0.95, output_path=None):
         """
         Initializes the camera control environment
         :param dataset_pickle_path: the dataset pickle
@@ -15,6 +16,10 @@ class DroneControlEnv(gym.Env):
         """
         self.metadata = {'render.modes': ['human'], }
         self.interactive = interactive
+
+        self.a_r = a_r
+        self.a_p = a_p
+        self.e_thres = e_thres
 
         # Load data
         with open(dataset_pickle_path, 'rb') as f:
@@ -55,6 +60,10 @@ class DroneControlEnv(gym.Env):
         self.final_pan_error = []
         self.final_tilt_error = []
 
+        # Code for saving the images
+        self.output_path = output_path
+        self.current_image = 0
+        self.current_id = 0
 
     def reset(self):
 
@@ -88,6 +97,13 @@ class DroneControlEnv(gym.Env):
         self.final_pan_error.append(pan)
         self.final_tilt_error.append(tilt)
 
+        self.current_id = 0
+        self.current_image = self.current_image + 1
+
+        # Reset text
+        self.current_state_text = str(self.tilts[self.current_tilt]) + '/' + str(self.pans[self.current_pan])
+        self.action_text = 'None'
+
         return self.observation
 
     def seed(self, seed):
@@ -112,6 +128,21 @@ class DroneControlEnv(gym.Env):
         # Retrieve observation
         tilt, pan = self.tilts[self.current_tilt], self.pans[self.current_pan]
 
+        # Prepare the text for the observation
+        if action == 0:
+            action_text = 'Stay'
+        elif action == 1:
+            action_text = 'Up'
+        elif action == 2:
+            action_text = 'Down'
+        elif action == 3:
+            action_text = 'Left'
+        elif action == 4:
+            action_text = 'Right'
+
+        self.current_state_text = str(self.tilts[self.current_tilt]) + '/' + str(self.pans[self.current_pan])
+        self.action_text = action_text
+
         # Update statistics
         self.final_pan_error[-1] = pan
         self.final_tilt_error[-1] = tilt
@@ -125,24 +156,35 @@ class DroneControlEnv(gym.Env):
 
         # Calculate reward
         reward = (2 - error) / 2.0
-        if reward < 0.95:
+        if reward < self.e_thres:
             reward = 0
         else:
-            reward = (reward - 0.95) / 0.05
+            reward = (reward - self.e_thres) / (1.0 - self.e_thres)
 
         # Add reward/punishment for correct/wrong movements
         if len(self.error_memory) > 2 and self.error_memory[-2] > self.error_memory[-1]:
-            reward += 0.1
+            reward += self.a_r
         elif len(self.error_memory) > 2 and self.error_memory[-2] < self.error_memory[-1]:
-            reward += -0.15
+            reward += -self.a_p
 
         self.iteration_counter += 1
 
         return self.observation, reward, self.done, {}
 
     def render(self, mode='human', close=False):
-        cv2.imshow('View', self.render_observation)
+        img = self.render_observation.copy()
+
+        cv2.putText(img, "Tilt/Pan: " + self.current_state_text, (10, 25), cv2.FONT_HERSHEY_TRIPLEX, 0.7, (255, 0, 0),
+                    1)
+        cv2.putText(img, "Sel. Action: " + self.action_text, (10, 50), cv2.FONT_HERSHEY_TRIPLEX, 0.7, (255, 0, 0), 1)
+
+        cv2.imshow('View', img)
         cv2.imshow('CNN Input', np.uint8(self.observation + self.mean_vector))
+
+        if self.output_path is not None and self.current_id % 2 == 0:
+            cv2.imwrite(self.output_path + str(self.current_image) + '_' + str(self.current_id) + '.jpg', img)
+
+        self.current_id += 1
 
         if self.interactive:
             print("Press any key to proceed")
@@ -152,4 +194,3 @@ class DroneControlEnv(gym.Env):
 
     def __str__(self):
         return 'DroneControlEnviroment'
-

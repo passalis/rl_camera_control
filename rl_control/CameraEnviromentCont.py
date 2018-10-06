@@ -5,20 +5,15 @@ from gym import spaces
 import pickle
 
 
-class CameraControlEnv(gym.Env):
+class CameraControlEnvCont(gym.Env):
 
-    def __init__(self, dataset_pickle_path='data/dataset.pickle', testing=False, interactive=False, a_p=0.15, a_r=0.1,
-                 e_thres=0.95, output_path=None):
+    def __init__(self, dataset_pickle_path='data/dataset.pickle', testing=False, interactive=False, output_path=None):
         """
         Initializes the camera control environment
         :param dataset_pickle_path: the dataset pickle
         :param testing: True -> evaluation on test set, False -> evaluation on train set
         :param interactive: if set to True, then waits for user input before proceeding to the next action
         """
-
-        self.a_r = a_r
-        self.a_p = a_p
-        self.e_thres = e_thres
 
         self.metadata = {'render.modes': ['human'], }
 
@@ -42,8 +37,8 @@ class CameraControlEnv(gym.Env):
 
         # Size of the actual input to the CNN
         self.observation_size = 64
-        self.movement_step = 5
-        self.zoom_step = 10
+        self.movement_step = 20
+        self.zoom_step = 20
 
         # Create state
         self.current_tilt = 0
@@ -199,24 +194,15 @@ class CameraControlEnv(gym.Env):
         np.random.seed(seed)
 
     def step(self, action):
+        # actions = [x_axis transform, y_axis transform, zoom_transform]
 
-        # Perform an action
-        if action == 0:
-            pass
-        elif action == 1:  # down
-            self.current_center[1] += self.movement_step
-        elif action == 2:  # up
-            self.current_center[1] -= self.movement_step
-        elif action == 3:  # right
-            self.current_center[0] += self.movement_step
-        elif action == 4:  # left
-            self.current_center[0] -= self.movement_step
-        elif action == 5:  # zoom in
-            self.current_window_zoom -= self.zoom_step
-        elif action == 6:  # zoom out
-            self.current_window_zoom += self.zoom_step
-        else:
-            assert False
+        self.current_center[0] += (action[0]) * self.movement_step
+        self.current_center[1] += (action[1]) * self.movement_step
+        self.current_window_zoom += (action[2]) * self.zoom_step
+
+        self.current_center[0] = int(self.current_center[0])
+        self.current_center[1] = int(self.current_center[1])
+        self.current_window_zoom = int(self.current_window_zoom)
 
         if self.current_window_zoom < self.zoom_range[0]:
             self.current_window_zoom = self.zoom_range[0]
@@ -239,26 +225,14 @@ class CameraControlEnv(gym.Env):
         self.observation = self.render_observation.copy()
         self.observation = self.observation[self.current_center[1] -
                                             self.current_window_zoom:self.current_center[1] + self.current_window_zoom,
-                           self.current_center[0] - self.current_window_zoom:self.current_center[0]
-                                                                             + self.current_window_zoom, :]
+                           self.current_center[0] -
+                           self.current_window_zoom:self.current_center[0] + self.current_window_zoom, :]
+
         self.observation = cv2.resize(self.observation, (self.observation_size, self.observation_size))
         self.observation = self.observation - self.mean_vector
 
         # Prepare the text for the observation
-        if action == 0:
-            action_text = 'Stay'
-        elif action == 1:
-            action_text = 'Down'
-        elif action == 2:
-            action_text = 'Up'
-        elif action == 3:
-            action_text = 'Right'
-        elif action == 4:
-            action_text = 'Left'
-        elif action == 5:
-            action_text = 'Zoom in'
-        elif action == 6:
-            action_text = 'Zoom out'
+        action_text = "%3.2f, %3.2f, %3.2f," % (action[0], action[1], action[2])
 
         face_center = ((self.face_position[0] + self.face_position[2]) // 2,
                        (self.face_position[1] + self.face_position[3]) // 2)
@@ -283,20 +257,24 @@ class CameraControlEnv(gym.Env):
         self.current_state_text = '{0:.4f}'.format(zoom_error) + '/' + '{0:.4f}'.format(position_error)
         self.action_text = action_text
 
+        e_thres = 0.8
+        a_r = 0.2
+        a_p = 0.5
+
         # Calculate and normalize reward
         reward = (3 - current_error) / 3.0
 
         # Clip and scale the reward
-        if reward < self.e_thres:
+        if reward < e_thres:
             reward = 0
         else:
-            reward = (reward - self.e_thres) / (1.0 - self.e_thres)
+            reward = (reward - e_thres) / (1.0 - e_thres)
 
         # Add reward/punishment for correct/wrong movements
         if self.error_memory[-2] > self.error_memory[-1]:
-            reward += self.a_r
+            reward += a_r
         elif self.error_memory[-2] < self.error_memory[-1]:
-            reward += -self.a_p
+            reward += -a_p
 
         self.iteration_counter += 1
         done = False
@@ -322,7 +300,6 @@ class CameraControlEnv(gym.Env):
 
         if self.output_path is not None:
             cv2.imwrite(self.output_path + str(self.current_image) + '_' + str(self.current_id) + '.jpg', img)
-
         self.current_id += 1
 
         if self.interactive:
