@@ -1,6 +1,6 @@
 # Deep Reinforcement Learning for Controlling Frontal Person Close-up Shooting
 
-This repository contains an implementation of the Deep RL method proposed in *eep Reinforcement Learning for Controlling Frontal Person Close-up Shooting*.
+This repository contains an implementation of the Deep RL method proposed in *Deep Reinforcement Learning for Controlling Frontal Person Close-up Shooting*.
 
 If you use this code in your work please cite the following paper:
 
